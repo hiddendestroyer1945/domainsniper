@@ -1,0 +1,16 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+venv/
+env/
+.env
+
+# Reports & Output
+reports/*.json
+!reports/.gitkeep
+
+# Project specific
+core/tlds.dat.bak
