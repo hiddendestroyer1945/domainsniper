@@ -3,6 +3,6 @@ dnspython
 requests[socks]
 idna
 pysocks
-ddgs
+playwright
 aiohttp
 aiohttp-socks

@@ -1,41 +1,57 @@
 import asyncio
 import re
 from urllib.parse import urlparse
-try:
-    from ddgs import AsyncDDGS
-except ImportError:
-    from duckduckgo_search import AsyncDDGS
-import aiohttp
-from aiohttp_socks import ProxyConnector
+from playwright.async_api import async_playwright
 
 class SearchScanner:
     def __init__(self, proxy=None):
-        self.proxy = proxy # Expected format: "socks5h://127.0.0.1:9050"
+        self.proxy = proxy # Expected format from ProxyManager
         self.found_domains = set()
 
-    async def search_domains(self, keyword, max_results=50):
+    async def search_domains(self, keyword):
         """
-        Performs an asynchronous search for the keyword and extracts unique domains.
+        Performs an asynchronous search for the keyword using a headless browser
+        (UltraAnalyzer approach) to extract unique domains.
         """
-        print(f"[*] Querying DuckDuckGo for '{keyword}' related domains...")
+        print(f"[*] Querying DuckDuckGo for '{keyword}' related domains using Web UI Agents...")
         
         try:
-            async with AsyncDDGS(proxies=self.proxy) as ddgs:
-                results = await ddgs.text(keyword, max_results=max_results)
+            async with async_playwright() as p:
+                # Playwright expects standard socks5 URL scheme
+                proxy_settings = None
+                if self.proxy:
+                    clean_proxy = self.proxy.replace('socks5h://', 'socks5://')
+                    proxy_settings = {"server": clean_proxy}
                 
-                for r in results:
-                    # Extract from URL
-                    url = r.get('href', '')
-                    domain = self._extract_domain(url)
-                    if domain:
-                        self.found_domains.add(domain)
-                    
-                    # Extract from snippet/title (sometimes full domains are mentioned)
-                    text = f"{r.get('title', '')} {r.get('body', '')}"
-                    potential_domains = re.findall(r'(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]', text.lower())
-                    for d in potential_domains:
-                        if keyword.lower() in d:
-                            self.found_domains.add(d)
+                browser = await p.chromium.launch(headless=True, proxy=proxy_settings)
+                context = await browser.new_context(
+                    ignore_https_errors=True,
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                )
+                page = await context.new_page()
+                
+                # Using the duckduckgo HTML version avoids heavy JS and captchas
+                url = f"https://html.duckduckgo.com/html/?q={keyword}"
+                await page.goto(url, wait_until="networkidle", timeout=45000)
+                
+                content = await page.content()
+                
+                # Extract links directly from hrefs using Javascript injection
+                hrefs = await page.evaluate("() => Array.from(document.querySelectorAll('a')).map(a => a.href)")
+                
+                for href in hrefs:
+                    if 'duckduckgo.com' not in href and keyword.lower() in href.lower():
+                        domain = self._extract_domain(href)
+                        if domain:
+                            self.found_domains.add(domain)
+
+                # Optional: Regex matching on raw text as fallback
+                potential_domains = re.findall(r'(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]', content.lower())
+                for d in potential_domains:
+                    if keyword.lower() in d and 'duckduckgo' not in d:
+                        self.found_domains.add(d)
+
+                await browser.close()
 
         except Exception as e:
             print(f"[!] Search error: {e}")
@@ -55,12 +71,3 @@ class SearchScanner:
             return domain.lower()
         except:
             return None
-
-if __name__ == "__main__":
-    # Small test harness
-    async def test():
-        scanner = SearchScanner()
-        results = await scanner.search_domains("yahoo", max_results=20)
-        print(f"Results: {results}")
-
-    asyncio.run(test())
