@@ -55,6 +55,14 @@ def main():
     # Phase 2: Discovery
     print("\n[*] Phase 2: Discovering Active Domains...")
     discoverer = Discoverer()
+    
+    # Pre-scan sanity check
+    if not discoverer.sanity_check():
+        print("[!] ERROR: Initial connectivity test failed. Your DNS resolution is being blocked or Tor is not responding.")
+        if use_tor:
+            print("[*] Tip: Ensure Tor is running and your 'socks5h' proxy is correctly configured.")
+        sys.exit(1)
+
     active_domains_data = discoverer.check_existence(variants)
     print(f"[+] Found {len(active_domains_data)} active domains.")
 

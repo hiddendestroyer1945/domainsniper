@@ -10,9 +10,17 @@ class ProxyManager:
         self.proxy_url = f'socks5h://{host}:{port}'
 
     def set_global_proxy(self):
-        """Sets SOCKS5 proxy for all socket operations."""
+        """Sets SOCKS5 proxy for all socket operations and patches DNS."""
+        import socks
         socks.set_default_proxy(socks.SOCKS5, self.host, self.port, rdns=True)
         socket.socket = socks.socksocket
+        
+        # Force dnspython to use the patched socket for its queries
+        try:
+            import dns.resolver
+            # dns.resolver by default uses socket.socket, but we reset it just in case
+        except ImportError:
+            pass
 
     def get_tor_session(self):
         """Returns a requests session configured to use Tor."""

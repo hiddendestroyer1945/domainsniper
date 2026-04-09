@@ -2,41 +2,71 @@ import dns.resolver
 import concurrent.futures
 import socket
 import os
+import time
 
 class Discoverer:
     def __init__(self, tlds=None):
-        self.tlds = tlds or self._load_tlds()
+        self.tlds = self._load_tlds(tlds)
+        self.resolver = dns.resolver.Resolver()
+        self.resolver.timeout = 3
+        self.resolver.lifetime = 3
 
-    def _load_tlds(self):
-        """Loads TLDs from the data file."""
+    def _load_tlds(self, custom_tlds):
+        """Loads and cleans TLDs from the data file."""
+        if custom_tlds:
+            return custom_tlds
+            
         tld_file = os.path.join(os.path.dirname(__file__), 'tlds.dat')
+        tlds = []
         if os.path.exists(tld_file):
             with open(tld_file, 'r') as f:
-                return [line.strip() for line in f if line.strip() and not line.strip().startswith('#')]
+                for line in f:
+                    clean = line.strip().lstrip('.')
+                    # Skip empty lines, comments, and single-letter headers
+                    if clean and not clean.startswith('#') and len(clean) > 1:
+                        tlds.append(clean)
         
-        # Fallback to a very small list if file is missing
-        return ['com', 'net', 'org', 'co', 'io', 'info', 'biz']
+        if not tlds:
+            return ['com', 'net', 'org', 'co', 'io', 'info', 'biz']
+        return list(set(tlds)) # Ensure uniqueness
+
+    def sanity_check(self):
+        """Verifies that DNS resolution is working."""
+        test_domains = ['google.com', 'amazon.com', 'yahoo.com']
+        for domain in test_domains:
+            if self.resolve_dns(domain):
+                return True
+        return False
 
     def check_existence(self, domains):
         """
         Checks which of the provided domain variants exist across all TLDs.
         """
+        if not self.sanity_check():
+            print("[!] CRITICAL: DNS resolution check failed. Please check your internet connection or Tor status.")
+            return []
+
         results = []
         target_domains = []
         
         for base in domains:
             for tld in self.tlds:
-                # Handle cases where TLD might already have a leading dot
-                clean_tld = tld.lstrip('.')
-                target_domains.append(f"{base}.{clean_tld}")
+                target_domains.append(f"{base}.{tld}")
 
         print(f"[*] Starting discovery for {len(target_domains)} domain combinations...")
         
-        # Increased workers for large-scale TLD scanning
-        with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
+        # Use a smaller worker pool to avoid being rate-limited by DNS servers
+        with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
             future_to_domain = {executor.submit(self.resolve_dns, domain): domain for domain in target_domains}
+            
+            completed = 0
+            total = len(target_domains)
+            
             for future in concurrent.futures.as_completed(future_to_domain):
-                domain = future_to_domain[future]
+                completed += 1
+                if completed % 100 == 0:
+                    print(f"[*] Progress: {completed}/{total} checked...", end='\r')
+                    
                 try:
                     data = future.result()
                     if data:
@@ -44,16 +74,14 @@ class Discoverer:
                 except Exception:
                     pass
         
+        print(f"\n[+] Discovery complete. Found {len(results)} registered variants.")
         return results
 
     def resolve_dns(self, domain):
         """Tries to resolve the A record for a domain."""
         try:
-            # Short timeout to keep the scan moving
-            resolver = dns.resolver.Resolver()
-            resolver.timeout = 2
-            resolver.lifetime = 2
-            answers = resolver.resolve(domain, 'A')
+            # We reuse the same resolver but catch exceptions per call
+            answers = self.resolver.resolve(domain, 'A')
             return {
                 'domain': domain,
                 'status': 'registered',
