@@ -35,16 +35,20 @@ def main():
     tor_session = None
 
     if use_tor:
-        print("[*] Setting up Tor proxy...")
-        proxy_manager.set_global_proxy()
+        # Check connection BEFORE patching global socket
+        print("[*] Verifying Tor service...")
         if proxy_manager.check_tor_connection():
-            print("[+] Tor connection verified.")
+            print("[+] Tor service detected. Applying global stealth patch...")
+            proxy_manager.set_global_proxy()
             tor_session = proxy_manager.get_tor_session()
         else:
-            print("[!] Tor connection failed! Ensure Tor is running on port 9050.")
-            cont = input("[?] Continue without Tor? (y/n): ").lower()
-            if cont != 'y':
+            print("[!] Tor service NOT detected! Ensure Tor is running on port 9050.")
+            cont = input("[?] Continue without Tor? (y/n/exit): ").lower()
+            if cont == 'exit':
+                sys.exit(0)
+            elif cont != 'y':
                 sys.exit(1)
+            use_tor = False
 
     # Phase 1: Permutation
     print("\n[*] Phase 1: Generating Permutations...")
@@ -54,7 +58,7 @@ def main():
 
     # Phase 2: Discovery
     print("\n[*] Phase 2: Discovering Active Domains...")
-    discoverer = Discoverer()
+    discoverer = Discoverer(use_tor=use_tor)
     
     # Pre-scan sanity check
     if not discoverer.sanity_check():

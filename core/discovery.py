@@ -5,11 +5,13 @@ import os
 import time
 
 class Discoverer:
-    def __init__(self, tlds=None):
+    def __init__(self, tlds=None, use_tor=False):
         self.tlds = self._load_tlds(tlds)
         self.resolver = dns.resolver.Resolver()
-        self.resolver.timeout = 3
-        self.resolver.lifetime = 3
+        # Increased timeouts for Tor stability (Tor DNS can be slow)
+        timeout = 7 if use_tor else 3
+        self.resolver.timeout = timeout
+        self.resolver.lifetime = timeout
 
     def _load_tlds(self, custom_tlds):
         """Loads and cleans TLDs from the data file."""
