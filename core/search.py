@@ -1,7 +1,10 @@
 import asyncio
 import re
 from urllib.parse import urlparse
-from duckduckgo_search import AsyncDDGS
+try:
+    from ddgs import AsyncDDGS
+except ImportError:
+    from duckduckgo_search import AsyncDDGS
 import aiohttp
 from aiohttp_socks import ProxyConnector
 

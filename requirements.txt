@@ -3,6 +3,6 @@ dnspython
 requests[socks]
 idna
 pysocks
-duckduckgo_search
+ddgs
 aiohttp
 aiohttp-socks
