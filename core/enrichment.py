@@ -38,14 +38,14 @@ class Enricher:
         infra = {}
         # MX Records
         try:
-            mx_answers = dns.resolver.resolve(domain, 'MX')
+            mx_answers = dns.resolver.resolve(domain, 'MX', tcp=True)
             infra['mx'] = [str(rdata.exchange) for rdata in mx_answers]
         except Exception:
             infra['mx'] = []
 
         # NS Records
         try:
-            ns_answers = dns.resolver.resolve(domain, 'NS')
+            ns_answers = dns.resolver.resolve(domain, 'NS', tcp=True)
             infra['ns'] = [str(rdata) for rdata in ns_answers]
         except Exception:
             infra['ns'] = []

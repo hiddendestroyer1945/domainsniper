@@ -80,16 +80,18 @@ class Discoverer:
         return results
 
     def resolve_dns(self, domain):
-        """Tries to resolve the A record for a domain."""
+        """Tries to resolve the A record for a domain safely using socket (Tor TCP compatible)."""
         try:
-            # We reuse the same resolver but catch exceptions per call
-            answers = self.resolver.resolve(domain, 'A')
-            return {
-                'domain': domain,
-                'status': 'registered',
-                'ips': [str(rdata) for rdata in answers]
-            }
-        except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer, dns.resolver.NoNameservers, dns.resolver.Timeout):
+            # gethostbyname_ex returns (hostname, aliaslist, ipaddrlist)
+            _, _, ipaddrlist = socket.gethostbyname_ex(domain)
+            if ipaddrlist:
+                return {
+                    'domain': domain,
+                    'status': 'registered',
+                    'ips': ipaddrlist
+                }
+            return None
+        except socket.gaierror:
             return None
         except Exception:
             return None
