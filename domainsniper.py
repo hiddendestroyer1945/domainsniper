@@ -1,15 +1,60 @@
 import os
 import json
 import sys
+import asyncio
 from core.permutations import Permutator
 from core.discovery import Discoverer
 from core.proxy import ProxyManager
 from core.enrichment import Enricher
+from core.search import SearchScanner
 
-def main():
+async def run_discovery(base_name, use_tor, proxy_manager):
+    """Orchestrates the discovery phase based on user choice."""
+    print("\n[?] Select Discovery Mode:")
+    print(" 1. DNS Brute-force (Deep TLD scan)")
+    print(" 2. Search-Engine Recon (Fast metadata discovery)")
+    print(" 3. Both (Recommended for full coverage)")
+    
+    choice = input("[?] Choice [1-3]: ").strip() or "3"
+    
+    active_domains_data = []
+    
+    # Generate Permutations for Brute-force if needed
+    permutator = Permutator(base_name)
+    variants = permutator.generate_all()
+
+    if choice in ["1", "3"]:
+        print("\n[*] Phase 2a: Discovering Active Domains via DNS Brute-force...")
+        discoverer = Discoverer(use_tor=use_tor)
+        # Pre-scan sanity check
+        if discoverer.sanity_check():
+            brute_results = discoverer.check_existence(variants)
+            active_domains_data.extend(brute_results)
+        else:
+            print("[!] DNS check failed. Skipping Brute-force phase.")
+
+    if choice in ["2", "3"]:
+        print("\n[*] Phase 2b: Discovering Active Domains via Search Recon...")
+        proxy_url = proxy_manager.proxy_url if use_tor else None
+        scanner = SearchScanner(proxy=proxy_url)
+        search_results = await scanner.search_domains(base_name)
+        
+        # Convert search strings to Discovery format
+        for domain in search_results:
+            active_domains_data.append({
+                'domain': domain,
+                'status': 'discovered',
+                'ips': []
+            })
+
+    # Deduplicate strictly by domain
+    unique_domains = {d['domain']: d for d in active_domains_data}.values()
+    return list(unique_domains)
+
+async def main():
     print("""
     ========================================
-             DOMAIN SNIPER v1.0
+             DOMAIN SNIPER v1.1
     ========================================
     """)
 
@@ -23,7 +68,7 @@ def main():
         print("[!] Domain name cannot be empty.")
         sys.exit(1)
 
-    report_name = input("[?] Enter the report filename (e.g., scan_results.json): ").strip()
+    report_name = input("[?] Enter the report filename: ").strip()
     if not report_name.endswith('.json'):
         report_name += '.json'
     
@@ -35,7 +80,6 @@ def main():
     tor_session = None
 
     if use_tor:
-        # Check connection BEFORE patching global socket
         print("[*] Verifying Tor service...")
         if proxy_manager.check_tor_connection():
             print("[+] Tor service detected. Applying global stealth patch...")
@@ -57,41 +101,34 @@ def main():
     print(f"[+] Generated {len(variants)} potential domain variants.")
 
     # Phase 2: Discovery
-    print("\n[*] Phase 2: Discovering Active Domains...")
-    discoverer = Discoverer(use_tor=use_tor)
-    
-    # Pre-scan sanity check
-    if not discoverer.sanity_check():
-        print("[!] ERROR: Initial connectivity test failed. Your DNS resolution is being blocked or Tor is not responding.")
-        if use_tor:
-            print("[*] Tip: Ensure Tor is running and your 'socks5h' proxy is correctly configured.")
-        sys.exit(1)
-
-    active_domains_data = discoverer.check_existence(variants)
-    print(f"[+] Found {len(active_domains_data)} active domains.")
+    active_domains_data = await run_discovery(base_name, use_tor, proxy_manager)
+    print(f"[+] Total unique active/discovered domains: {len(active_domains_data)}")
 
     # Phase 3: Enrichment
-    print("\n[*] Phase 3: Deep Intelligence Gathering...")
-    enricher = Enricher(tor_session=tor_session)
-    final_results = []
+    if active_domains_data:
+        print("\n[*] Phase 3: Deep Intelligence Gathering...")
+        enricher = Enricher(tor_session=tor_session)
+        final_results = []
 
-    for domain_info in active_domains_data:
-        domain = domain_info['domain']
-        enriched_data = enricher.enrich_domain(domain)
-        # Merge discovery info with enriched info
-        enriched_data['ips'] = domain_info.get('ips', [])
-        final_results.append(enriched_data)
+        for domain_info in active_domains_data:
+            domain = domain_info['domain']
+            enriched_data = enricher.enrich_domain(domain)
+            # Merge discovery info with enriched info
+            enriched_data['ips'] = list(set(enriched_data.get('ips', []) + domain_info.get('ips', [])))
+            final_results.append(enriched_data)
 
-    # Step 3: Reporting
-    print(f"\n[*] Saving results to {report_path}...")
-    with open(report_path, 'w') as f:
-        json.dump(final_results, f, indent=4)
-    
-    print("\n[+] Scan complete. Happy hunting!")
+        # Step 3: Reporting
+        print(f"\n[*] Saving results to {report_path}...")
+        with open(report_path, 'w') as f:
+            json.dump(final_results, f, indent=4)
+        
+        print("\n[+] Scan complete. Happy hunting!")
+    else:
+        print("\n[!] No active domains found. No report generated.")
 
 if __name__ == "__main__":
     try:
-        main()
+        asyncio.run(main())
     except KeyboardInterrupt:
         print("\n[!] User interrupted. Exiting...")
         sys.exit(0)
