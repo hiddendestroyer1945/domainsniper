@@ -14,3 +14,4 @@ reports/*.json
 
 # Project specific
 core/tlds.dat.bak
+repo.tar

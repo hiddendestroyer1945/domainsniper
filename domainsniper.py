@@ -72,7 +72,9 @@ async def main():
     if not report_name.endswith('.json'):
         report_name += '.json'
     
-    report_path = os.path.join('reports', report_name)
+    # SECURITY FIX: Prevent Path Traversal (OWASP) by extracting only the base filename
+    clean_report_name = os.path.basename(report_name)
+    report_path = os.path.join('reports', clean_report_name)
 
     # Step 2: Stealth Setup
     use_tor = input("[?] Use Tor for stealth? (y/n): ").lower() == 'y'
